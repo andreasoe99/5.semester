@@ -1,0 +1,847 @@
+---
+title: "andendel"
+author: "Patrick Printz"
+date: "12/18/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### PAKKER
+```{r include=FALSE}
+library(readxl)
+library(tidyverse)
+library(dplyr)
+library(car)
+library(tibble)     # nice dataframes
+library(stargazer)  # regression tables
+library(ggplot2)    # nice graphs
+library(dplyr)      # data manipulation
+library(car)        # test linear hypotheses
+library(skimr)      # descriptive statistics
+library(tseries)
+library(sandwich)
+library(lmtest)
+library(olsrr) # Automatiske normalitets test
+library(DescTools) # Bruges til at udfører Jarque-Bera test med NA's
+library(texreg)
+library(MASS)
+library(urca) # Unit root tests
+library(seasonal)
+library(dynlm)
+library(forecast)
+library(strucchange)
+```
+
+# Indlæser datasæt og definere variable
+```{r}
+DKdata <- read_xlsx("~/Desktop/Universitet/Projekter/5. Semester projekt/Datasæt for anden del/Danmark.xlsx")
+  # Variable:
+    ipc_dk1 <- ts(DKdata$`Y/L`, start = 1951, frequency = 1)
+    ssi_dk1 <- ts(DKdata$`I/Y`, start = 1951, frequency = 1)
+    pg_dk1 <- ts(DKdata$N, start = 1951, frequency = 1)
+SWEdata <- read_xlsx("~/Desktop/Universitet/Projekter/5. Semester projekt/Datasæt for anden del/Sverige.xlsx")
+  # Variable:
+    ipc_swe1 <- ts(SWEdata$`Y/L`, start = 1951, frequency = 1)
+    ssi_swe1 <- ts(SWEdata$`I/Y`, start = 1951, frequency = 1)
+    pg_swe1 <- ts(SWEdata$N, start = 1951, frequency = 1)
+NORdata <- read_xlsx("~/Desktop/Universitet/Projekter/5. Semester projekt/Datasæt for anden del/Norge.xlsx")
+  # Variable:
+    ipc_nor1 <- ts(NORdata$`Y/L`, start = 1951, frequency = 1)
+    ssi_nor1 <- ts(NORdata$`I/Y`, start = 1951, frequency = 1)
+    pg_nor1 <- ts(NORdata$N, start = 1951, frequency = 1)
+```
+
+## Definere variable (Dvs. tager logaritmes og allerede difference af serierne her)
+```{r}
+# Tager logaritmen til variablene Y/L og I/Y, definere samtidig nu de diff af seriene!
+ipc_dk <- log(ipc_dk1)
+ssi_dk <- log(ssi_dk1)
+pg_dk <- log(pg_dk1)
+
+ipc_swe <- log(ipc_swe1)
+ssi_swe <- log(ssi_swe1)
+pg_swe <- log(pg_swe1)
+
+ipc_nor <- log(ipc_nor1)
+ssi_nor <- log(ssi_nor1)
+pg_nor <- log(pg_nor1)
+
+## DIFF
+ipc_dk_diff <- diff(ipc_dk)
+ssi_dk_diff <- diff(ssi_dk)
+pg_dk_diff <- diff(pg_dk)
+
+ipc_swe_diff <- diff(ipc_swe)
+ssi_swe_diff <- diff(ssi_swe)
+pg_swe_diff <- diff(pg_swe)
+
+ipc_nor_diff <- diff(ipc_nor)
+ssi_nor_diff <- diff(ssi_nor)
+pg_nor_diff <- diff(pg_nor)
+```
+
+
+
+
+
+
+# Test for unit root
+## PLOT I LEVELS
+```{r fig.height=4, fig.width=4}
+par(mfrow=c(3,1), mar=c(4,4,1,1))
+ts.plot(ipc_dk,ipc_swe,ipc_nor, col = c("red","green","blue"), ylab = "Y/L")
+ts.plot(ssi_dk, ssi_swe, ssi_nor, col = c("red","green","blue"), ylab = "I/Y")
+ts.plot(pg_dk,pg_swe,pg_nor, col = c("red","green","blue"), ylab = "NGD")
+```
+
+
+### DK 
+#### I(0)
+```{r include=TRUE}
+## NONE
+ur.df(ipc_dk, type = "none", selectlags = "AIC") # Ikke Stationary
+ur.df(ssi_dk, type = "none", selectlags = "AIC") # Ikke Stationary
+ur.df(pg_dk, type = "none", selectlags = "AIC") # Ikke Stationary
+#### Critical Values
+ur.df(ipc_dk, type = "none", selectlags = "AIC")@cval
+
+## DRIFT
+ur.df(ipc_dk, type = "drift", selectlags = "AIC") # Stationary
+ur.df(ssi_dk, type = "drift", selectlags = "AIC") # Ikke Stationary
+ur.df(pg_dk, type = "drift", selectlags = "AIC") # Stationary
+#### Critical Values
+ur.df(ipc_dk, type = "drift", selectlags = "AIC")@cval
+
+## TREND
+ur.df(ipc_dk, type = "trend", selectlags = "AIC") # Ikke Stationary
+ur.df(ssi_dk, type = "trend", selectlags = "AIC") # Ikke Stationary
+ur.df(pg_dk, type = "trend", selectlags = "AIC") # Stationary
+#### Critical Values
+ur.df(ipc_dk, type = "trend", selectlags = "AIC")@cval
+
+
+####### PP TEST
+pp.test(ipc_dk) # Ikke Stationary
+pp.test(ssi_dk) # Ikke Stationary
+pp.test(pg_dk) # Stationary
+```
+
+
+
+
+
+#### I(1)
+```{r include=TRUE}
+### NONE
+ur.df(ipc_dk_diff, type = "none", selectlags = "AIC") # Ikke Stationary**
+ur.df(ssi_dk_diff, type = "none", selectlags = "AIC") # Stationary
+#### Critical Values
+ur.df(ipc_dk_diff, type = "none", selectlags = "AIC")@cval
+
+## DRIFT
+ur.df(ipc_dk_diff, type = "drift", selectlags = "AIC") #  Stationary
+ur.df(ssi_dk_diff, type = "drift", selectlags = "AIC") #  Stationary
+#### Critical Values
+ur.df(ipc_dk_diff, type = "drift", selectlags = "AIC")@cval
+
+################## BURDE IKKE INKLUDERE TREND EFTERSOM DET SES I PLOT DER IKKE ER TREND!
+## TREND
+ur.df(ipc_dk_diff, type = "trend", selectlags = "AIC") #  Stationary
+ur.df(ssi_dk_diff, type = "trend", selectlags = "AIC") #  Stationary
+#### Critical Values
+ur.df(ipc_dk_diff, type = "trend", selectlags = "AIC")@cval
+
+####### PP TEST
+pp.test(ipc_dk_diff) # Stationary
+pp.test(ssi_dk_diff) # Stationary
+```
+
+
+
+
+### SVERIGE
+#### I(0)
+```{r include=TRUE}
+## NONE
+ur.df(ipc_swe, type = "none", selectlags = "AIC") # Ikke Stationary
+ur.df(ssi_swe, type = "none", selectlags = "AIC") # Ikke Stationary
+ur.df(pg_swe, type = "none", selectlags = "AIC") # Ikke Stationary
+#### Critical Values
+ur.df(ipc_swe, type = "none", selectlags = "AIC")@cval
+
+## DRIFT
+ur.df(ipc_swe, type = "drift", selectlags = "AIC") # Ikke Stationary
+ur.df(ssi_swe, type = "drift", selectlags = "AIC") # Ikke Stationary
+ur.df(pg_swe, type = "drift", selectlags = "AIC") # Stationary
+#### Critical Values
+ur.df(ipc_swe, type = "drift", selectlags = "AIC")@cval
+
+## TREND
+ur.df(ipc_swe, type = "trend", selectlags = "AIC") # Ikke Stationary
+ur.df(ssi_swe, type = "trend", selectlags = "AIC") # Ikke Stationary
+ur.df(pg_swe, type = "trend", selectlags = "AIC") # Stationary
+#### Critical Values
+ur.df(ipc_swe, type = "trend", selectlags = "AIC")@cval
+
+
+####### PP TEST
+pp.test(ipc_swe) # Ikke Stationary
+pp.test(ssi_swe) # Ikke Stationary
+pp.test(pg_swe) # Stationary
+```
+
+#### I(1)
+```{r include=TRUE}
+ur.df(ipc_swe_diff, type = "none", selectlags = "AIC") # ikke Stationary** (kun på 5%)
+ur.df(ssi_swe_diff, type = "none", selectlags = "AIC") # Stationary
+#### Critical Values
+ur.df(ipc_swe_diff, type = "none", selectlags = "AIC")@cval
+
+## DRIFT
+ur.df(ipc_swe_diff, type = "drift", selectlags = "AIC") #  Stationary
+ur.df(ssi_swe_diff, type = "drift", selectlags = "AIC") #  Stationary
+#### Critical Values
+ur.df(ipc_swe_diff, type = "drift", selectlags = "AIC")@cval
+
+################## BURDE IKKE INKLUDERE TREND EFTERSOM DET SES I PLOT DER IKKE ER TREND!
+## TREND
+ur.df(ipc_swe_diff, type = "trend", selectlags = "AIC") #  Stationary
+ur.df(ssi_swe_diff, type = "trend", selectlags = "AIC") #  Stationary
+#### Critical Values
+ur.df(ipc_swe_diff, type = "trend", selectlags = "AIC")@cval
+
+####### PP TEST
+pp.test(ipc_swe_diff) # Stationary
+pp.test(ssi_swe_diff) # Stationary
+```
+
+
+
+
+
+
+
+
+
+
+### NORGE
+#### I(0)
+```{r include=TRUE}
+## NONE
+ur.df(ipc_nor, type = "none", selectlags = "AIC") # Ikke Stationary
+ur.df(ssi_nor, type = "none", selectlags = "AIC") # Ikke Stationary
+ur.df(pg_nor, type = "none", selectlags = "AIC") # Ikke Stationary
+#### Critical Values
+ur.df(ipc_nor, type = "none", selectlags = "AIC")@cval
+
+## DRIFT
+ur.df(ipc_nor, type = "drift", selectlags = "AIC") # Ikke Stationary
+ur.df(ssi_nor, type = "drift", selectlags = "AIC") # Ikke Stationary
+ur.df(pg_nor, type = "drift", selectlags = "AIC") # Stationary
+#### Critical Values
+ur.df(ipc_nor, type = "drift", selectlags = "AIC")@cval
+
+## TREND
+ur.df(ipc_nor, type = "trend", selectlags = "AIC") # Ikke Stationary
+ur.df(ssi_nor, type = "trend", selectlags = "AIC") # Ikke Stationary
+ur.df(pg_nor, type = "trend", selectlags = "AIC") # Stationary
+#### Critical Values
+ur.df(ipc_nor, type = "trend", selectlags = "AIC")@cval
+
+
+####### PP TEST
+pp.test(ipc_nor) # Ikke Stationary
+pp.test(ssi_nor) # Ikke Stationary
+pp.test(pg_nor) # Stationary
+```
+
+#### I(1)
+```{r include=TRUE}
+## NONE
+ur.df(ipc_nor_diff, type = "none", selectlags = "AIC") # Ikke Stationary* (Stationary på 5%)
+ur.df(ssi_nor_diff, type = "none", selectlags = "AIC") # Stationary
+ur.df(pg_nor_diff, type = "none", selectlags = "AIC") # Stationary
+#### Critical Values
+ur.df(ipc_nor_diff, type = "none", selectlags = "AIC")@cval
+
+## DRIFT
+ur.df(ipc_nor_diff, type = "drift", selectlags = "AIC") #  Stationary
+ur.df(ssi_nor_diff, type = "drift", selectlags = "AIC") #  Stationary
+ur.df(pg_nor_diff, type = "drift", selectlags = "AIC") # Stationary
+#### Critical Values
+ur.df(ipc_nor_diff, type = "drift", selectlags = "AIC")@cval
+
+
+################## BURDE IKKE INKLUDERE TREND EFTERSOM DET SES I PLOT DER IKKE ER TREND!
+## TREND
+ur.df(ipc_nor_diff, type = "trend", selectlags = "AIC") #  Stationary
+ur.df(ssi_nor_diff, type = "trend", selectlags = "AIC") #  Stationary
+ur.df(pg_nor_diff, type = "trend", selectlags = "AIC") # Stationary
+#### Critical Values
+ur.df(ipc_nor_diff, type = "trend", selectlags = "AIC")@cval
+
+####### PP TEST
+pp.test(ipc_nor_diff) # Stationary
+pp.test(ssi_nor_diff) # Stationary
+pp.test(pg_nor_diff) # Stationary
+```
+
+
+# PLOT AF SERIER I FIRST DIFFERENCE
+PLOT AF SERIERNE!
+```{r fig.height=10, fig.width=10}
+par(mfrow=c(3,1), mar=c(4,4,1,1))
+ts.plot(ipc_dk_diff,ipc_swe_diff,ipc_nor_diff, col = c("red","green","blue"), ylab = "Y/L")
+ts.plot(ssi_dk_diff, ssi_swe_diff, ssi_nor_diff, col = c("red","green","blue"), ylab = "I/Y")
+ts.plot(pg_dk_diff,pg_swe_diff,pg_nor_diff, col = c("red","green","blue"), ylab = "NGD")
+```
+
+
+
+
+
+
+
+
+
+
+# Cointegrations - ARDL BOUNDS TEST
+$$
+∆y_t = \beta_1 ∆y_{t-i} + \alpha_1 ∆X1_{t-i} +\gamma_1 ∆X2_{t-i}+ \theta_1y_{t-1} + \mu + \phi_1 X1_{t-1}+\phi _2X2_{t-1} + \varepsilon_t
+$$
+
+$$
+H_0: \theta_1 = \phi_1 = 0 \space \space (Ingen \space Cointegration)
+$$
+
+$$
+H_1: \theta_1 \ne \phi_1 \ne 0 \space \space (Cointegration)
+$$
+
+## DK
+```{r}
+# LAG LENGHT!
+
+# ALT ER MED OG 2 LAGS 
+AIC(dynlm(ipc_dk_diff ~ L(ipc_dk_diff,1:2) + L(ssi_dk_diff, 0:2) + L(pg_dk_diff, 0:2) + L(ipc_dk,1) + L(ssi_dk,1) + L(pg_dk,1) + trend(ipc_dk_diff)))
+
+# FJERNEDE TRENDEN STADIG 2 LAGS
+AIC(dynlm(ipc_dk_diff ~ L(ipc_dk_diff,1:2) + L(ssi_dk_diff, 0:2) + L(pg_dk_diff, 0:2) + L(ipc_dk,1) + L(ssi_dk,1) + L(pg_dk,1)))
+
+# FJERNER SKÆRINGEN
+AIC(dynlm(ipc_dk_diff ~ L(ipc_dk_diff,1:2) + L(ssi_dk_diff, 0:2) + L(pg_dk_diff, 0:2) + L(ipc_dk,1) + L(ssi_dk,1) + L(pg_dk,1)-1))
+
+
+## REDUCERE LAGS 
+
+
+# HELE MODELLEN MED 1 LAG
+AIC(dynlm(ipc_dk_diff ~ L(ipc_dk_diff,1) + L(ssi_dk_diff, 0:1) + L(pg_dk_diff, 0:1) + L(ipc_dk,1) + L(ssi_dk,1) + L(pg_dk,1) + trend(ipc_dk_diff)))
+
+# FJERNER TREND
+AIC(dynlm(ipc_dk_diff ~ L(ipc_dk_diff,1) + L(ssi_dk_diff, 0:1) + L(pg_dk_diff, 0:1) + L(ipc_dk,1) + L(ssi_dk,1) + L(pg_dk,1)))
+
+# FJERNER SKÆRINGEN
+AIC(dynlm(ipc_dk_diff ~ L(ipc_dk_diff,1) + L(ssi_dk_diff, 0:1) + L(pg_dk_diff, 0:1) + L(ipc_dk,1) + L(ssi_dk,1) + L(pg_dk,1)-1))
+
+
+### REDUCERE LAGS IGEN
+
+
+# HELE MODELLEN MED 0 LAG
+AIC(dynlm(ipc_dk_diff ~ L(ipc_dk_diff,1) + L(ssi_dk_diff, 0) + L(pg_dk_diff, 0) + L(ipc_dk,1) + L(ssi_dk,1) + L(pg_dk,1) + trend(ipc_dk_diff)))
+
+# FJERNER TREND
+AIC(dynlm(ipc_dk_diff ~ L(ipc_dk_diff,1) + L(ssi_dk_diff, 0) + L(pg_dk_diff, 0) + L(ipc_dk,1) + L(ssi_dk,1) + L(pg_dk,1)))
+
+# FJERNER SKÆRINGEN
+AIC(dynlm(ipc_dk_diff ~ L(ipc_dk_diff,1) + L(ssi_dk_diff, 0) + L(pg_dk_diff, 0) + L(ipc_dk,1) + L(ssi_dk,1) + L(pg_dk,1)-1))
+```
+
+```{r}
+## COMPARISONS OF 3 BEST MODELS
+# Sammenligningsmodeller
+# Med 1 lag
+ecm_dk_l1 <- dynlm(ipc_dk_diff ~ L(ipc_dk_diff,1) + L(ssi_dk_diff, 0:1) + L(pg_dk_diff, 0:1) + L(ipc_dk,1) + L(ssi_dk,1) + L(pg_dk,1))
+
+# Med 0 lag og trend
+ecm_dk_l0_t <- dynlm(ipc_dk_diff ~ L(ipc_dk_diff,1) + L(ssi_dk_diff, 0) + L(pg_dk_diff, 0) + L(ipc_dk,1) + L(ssi_dk,1) + L(pg_dk,1) + trend(ipc_dk_diff))
+
+## BEDSTE MODEL VALGT!
+ecm_dk <- dynlm(ipc_dk_diff ~ L(ipc_dk_diff,1) + L(ssi_dk_diff, 0) + L(pg_dk_diff, 0) + L(ipc_dk,1) + L(ssi_dk,1) + L(pg_dk,1))
+
+```
+
+
+```{r DK}
+#### Laver begrænsede model!
+ecm_dk_l1_restricted <- dynlm(ipc_dk_diff ~ L(ipc_dk_diff,1) + L(ssi_dk_diff, 0:1) + L(pg_dk_diff, 0:1))
+
+ecm_dk_l0_t_restricted <- dynlm(ipc_dk_diff ~ L(ipc_dk_diff,1) + L(ssi_dk_diff, 0) + L(pg_dk_diff, 0) + trend(ipc_dk_diff))
+
+ecm_dk_restricted <- dynlm(ipc_dk_diff ~ L(ipc_dk_diff,1) + L(ssi_dk_diff, 0) + L(pg_dk_diff, 0))
+
+# F-test for hypoteser!
+anova(ecm_dk_l1, ecm_dk_l1_restricted)
+anova(ecm_dk_l0_t, ecm_dk_l0_t_restricted)
+anova(ecm_dk, ecm_dk_restricted)
+
+```
+PSS (2001): https://onlinelibrary.wiley.com/doi/epdf/10.1002/jae.616
+
+
+
+
+
+
+### SWE
+# VALG AF MODEL
+```{r}
+##################################### LAG LENGHT #####################################################
+
+# ALT ER MED OG 2 LAGS 
+AIC(dynlm(ipc_swe_diff ~ L(ipc_swe_diff,1:2) + L(ssi_swe_diff, 0:2) + L(pg_swe_diff, 0:2) + L(ipc_swe,1) + L(ssi_swe,1) + L(pg_swe,1) + trend(ipc_swe_diff)))
+
+# FJERNEDE TRENDEN STADIG 2 LAGS
+AIC(dynlm(ipc_swe_diff ~ L(ipc_swe_diff,1:2) + L(ssi_swe_diff, 0:2) + L(pg_swe_diff, 0:2) + L(ipc_swe,1) + L(ssi_swe,1) + L(pg_swe,1)))
+
+# FJERNER SKÆRINGEN
+AIC(dynlm(ipc_swe_diff ~ L(ipc_swe_diff,1:2) + L(ssi_swe_diff, 0:2) + L(pg_swe_diff, 0:2) + L(ipc_swe,1) + L(ssi_swe,1) + L(pg_swe,1)-1))
+
+##################################### REDUCERE ANTALLET AF LAGS #####################################################
+# HELE MODELLEN MED 1 LAG
+AIC(dynlm(ipc_swe_diff ~ L(ipc_swe_diff,1) + L(ssi_swe_diff, 0:1) + L(pg_swe_diff, 0:1) + L(ipc_swe,1) + L(ssi_swe,1) + L(pg_swe,1) + trend(ipc_swe_diff)))
+
+# FJERNER TREND
+AIC(dynlm(ipc_swe_diff ~ L(ipc_swe_diff,1) + L(ssi_swe_diff, 0:1) + L(pg_swe_diff, 0:1) + L(ipc_swe,1) + L(ssi_swe,1) + L(pg_swe,1)))
+
+# FJERNER SKÆRINGEN
+AIC(dynlm(ipc_swe_diff ~ L(ipc_swe_diff,1) + L(ssi_swe_diff, 0:1) + L(pg_swe_diff, 0:1) + L(ipc_swe,1) + L(ssi_swe,1) + L(pg_swe,1)-1))
+
+##################################### REDUCERE ANTALLET AF LAGS #####################################################
+# HELE MODELLEN MED 0 LAG
+AIC(dynlm(ipc_swe_diff ~ L(ipc_swe_diff,1) + L(ssi_swe_diff, 0) + L(pg_swe_diff, 0) + L(ipc_swe,1) + L(ssi_swe,1) + L(pg_swe,1) + trend(ipc_swe_diff)))
+
+# FJERNER TREND
+AIC(dynlm(ipc_swe_diff ~ L(ipc_swe_diff,1) + L(ssi_swe_diff, 0) + L(pg_swe_diff, 0) + L(ipc_swe,1) + L(ssi_swe,1) + L(pg_swe,1)))
+
+# FJERNER SKÆRINGEN
+AIC(dynlm(ipc_swe_diff ~ L(ipc_swe_diff,1) + L(ssi_swe_diff, 0) + L(pg_swe_diff, 0) + L(ipc_swe,1) + L(ssi_swe,1) + L(pg_swe,1)-1))
+
+```
+
+
+```{r}
+# Sammenligningsmodeller
+
+# Tredje bedste model
+ecm_swe_l2_t <- dynlm(ipc_swe_diff ~ L(ipc_swe_diff,1:2) + L(ssi_swe_diff, 0:2) + L(pg_swe_diff, 0:2) + L(ipc_swe,1) + L(ssi_swe,1) + L(pg_swe,1) + trend(ipc_swe_diff))
+
+
+# Anden bedste model
+ecm_swe_l2_0 <- dynlm(ipc_swe_diff ~ L(ipc_swe_diff,1:2) + L(ssi_swe_diff, 0:2) + L(pg_swe_diff, 0:2) + L(ipc_swe,1) + L(ssi_swe,1) + L(pg_swe,1)-1)
+
+# Bedste model
+ecm_swe <- dynlm(ipc_swe_diff ~ L(ipc_swe_diff,1:2) + L(ssi_swe_diff, 0:2) + L(pg_swe_diff, 0:2) + L(ipc_swe,1) + L(ssi_swe,1) + L(pg_swe,1))
+```
+
+
+
+```{r SVERIGE}
+### Laver begrænsede modeller
+
+ecm_swe_l2_t_restricted <- dynlm(ipc_swe_diff ~ L(ipc_swe_diff,1:2) + L(ssi_swe_diff, 0:2) + L(pg_swe_diff, 0:2) + trend(ipc_swe_diff))
+
+
+# Anden bedste model
+ecm_swe_l2_0_restricted <- dynlm(ipc_swe_diff ~ L(ipc_swe_diff,1:2) + L(ssi_swe_diff, 0:2) + L(pg_swe_diff, 0:2)-1)
+
+
+# Bedste model
+ecm_swe_restricted <- dynlm(ipc_swe_diff ~ L(ipc_swe_diff,1:2) + L(ssi_swe_diff, 0:2) + L(pg_swe_diff, 0:2))
+
+anova(ecm_swe_l2_t, ecm_swe_l2_t_restricted)
+anova(ecm_swe_l2_0, ecm_swe_l2_0_restricted)
+anova(ecm_swe, ecm_swe_restricted)
+```
+
+F-stat < Kritiske værdi =  No cointegration.
+
+
+
+
+
+
+
+
+
+## NOR
+#### Valg af model
+```{r}
+##################################### LAG LENGHT #####################################################
+
+# ALT ER MED OG 2 LAGS 
+AIC(dynlm(ipc_nor_diff ~ L(ipc_nor_diff,1:2) + L(ssi_nor_diff, 0:2) + L(pg_nor_diff, 0:2) + L(ipc_nor,1) + L(ssi_nor,1) + L(pg_nor,1) + trend(ipc_nor_diff)))
+
+# FJERNEDE TRENDEN STADIG 2 LAGS
+AIC(dynlm(ipc_nor_diff ~ L(ipc_nor_diff,1:2) + L(ssi_nor_diff, 0:2) + L(pg_nor_diff, 0:2) + L(ipc_nor,1) + L(ssi_nor,1) + L(pg_nor,1)))
+
+# FJERNER SKÆRINGEN
+AIC(dynlm(ipc_nor_diff ~ L(ipc_nor_diff,1:2) + L(ssi_nor_diff, 0:2) + L(pg_nor_diff, 0:2) + L(ipc_nor,1) + L(ssi_nor,1) + L(pg_nor,1)-1))
+
+##################################### REDUCERE ANTALLET AF LAGS #####################################################
+# HELE MODELLEN MED 1 LAG
+AIC(dynlm(ipc_nor_diff ~ L(ipc_nor_diff,1) + L(ssi_nor_diff, 0:1) + L(pg_nor_diff, 0:1) + L(ipc_nor,1) + L(ssi_nor,1) + L(pg_nor,1) + trend(ipc_nor_diff)))
+
+# FJERNER TREND
+AIC(dynlm(ipc_nor_diff ~ L(ipc_nor_diff,1) + L(ssi_nor_diff, 0:1) + L(pg_nor_diff, 0:1) + L(ipc_nor,1) + L(ssi_nor,1) + L(pg_nor,1)))
+
+# FJERNER SKÆRINGEN
+AIC(dynlm(ipc_nor_diff ~ L(ipc_nor_diff,1) + L(ssi_nor_diff, 0:1) + L(pg_nor_diff, 0:1) + L(ipc_nor,1) + L(ssi_nor,1) + L(pg_nor,1)-1))
+
+##################################### REDUCERE ANTALLET AF LAGS #####################################################
+# HELE MODELLEN MED 0 LAG
+AIC(dynlm(ipc_nor_diff ~ L(ipc_nor_diff,1) + L(ssi_nor_diff, 0) + L(pg_nor_diff, 0) + L(ipc_nor,1) + L(ssi_nor,1) + L(pg_nor,1) + trend(ipc_nor_diff)))
+
+# FJERNER TREND
+AIC(dynlm(ipc_nor_diff ~ L(ipc_nor_diff,1) + L(ssi_nor_diff, 0) + L(pg_nor_diff, 0) + L(ipc_nor,1) + L(ssi_nor,1) + L(pg_nor,1)))
+
+# FJERNER SKÆRINGEN
+AIC(dynlm(ipc_nor_diff ~ L(ipc_nor_diff,1) + L(ssi_nor_diff, 0) + L(pg_nor_diff, 0) + L(ipc_nor,1) + L(ssi_nor,1) + L(pg_nor,1)-1))
+```
+
+
+```{r}
+# Sammenligningsmodeller
+# Tredje pladsen
+ecm_nor_l1_t <- dynlm(ipc_nor_diff ~ L(ipc_nor_diff,1) + L(ssi_nor_diff, 0:1) + L(pg_nor_diff, 0:1) + L(ipc_nor,1) + L(ssi_nor,1) + L(pg_nor,1) + trend(ipc_nor_diff))
+
+# Anden pladsen
+ecm_nor_l0 <- dynlm(ipc_nor_diff ~ L(ipc_nor_diff,1) + L(ssi_nor_diff, 0) + L(pg_nor_diff, 0) + L(ipc_nor,1) + L(ssi_nor,1) + L(pg_nor,1))
+
+
+# Første pladsen
+ecm_nor <- dynlm(ipc_nor_diff ~ L(ipc_nor_diff,1) + L(ssi_nor_diff, 0) + L(pg_nor_diff, 0) + L(ipc_nor,1) + L(ssi_nor,1) + L(pg_nor,1) + trend(ipc_nor_diff))
+
+```
+
+```{r}
+# Tredje pladsen
+ecm_nor_l1_t_restricted <- dynlm(ipc_nor_diff ~ L(ipc_nor_diff,1) + L(ssi_nor_diff, 0:1) + L(pg_nor_diff, 0:1) + trend(ipc_nor_diff))
+
+# Anden pladsen
+ecm_nor_l0_restricted <- dynlm(ipc_nor_diff ~ L(ipc_nor_diff,1) + L(ssi_nor_diff, 0) + L(pg_nor_diff, 0))
+
+# Første pladsen
+ecm_nor_restricted <- dynlm(ipc_nor_diff ~ L(ipc_nor_diff,1) + L(ssi_nor_diff, 0) + L(pg_nor_diff, 0) + trend(ipc_nor_diff))
+
+
+anova(ecm_nor_l1_t, ecm_nor_l1_t_restricted)
+anova(ecm_nor_l0, ecm_nor_l0_restricted)
+anova(ecm_nor, ecm_nor_restricted)
+```
+
+
+
+
+
+
+
+# DIAGNOSTICS!
+## GRAFISK ILLUSTRATION
+### DK
+```{r}
+par(mfrow=c(2,2), mar=c(4,4,1.5,2))
+plot(ecm_dk)
+```
+### SWE:
+```{r}
+par(mfrow=c(2,2), mar=c(4,4,1.5,2))
+plot(ecm_swe)
+```
+### NOR:
+```{r}
+par(mfrow=c(2,2), mar=c(4,4,1.5,2))
+plot(ecm_nor)
+```
+
+
+
+
+
+
+## Autokorrelation
+```{r}
+#RESIDUAL VARIABLE#
+### DK
+res_ecm_dk <- residuals(ecm_dk)
+
+### SWE
+res_ecm_swe <- residuals(ecm_swe)
+
+### NOR
+res_ecm_nor <- residuals(ecm_nor)
+```
+
+### Box-Pierce Q-statistik
+#### DK:
+```{r}
+Box.test(res_ecm_dk, lag = 12, type = "Box-Pierce") # H_0: Ingen Aurokorrelation = Konklusion: Der er ikke autokorrelation
+```
+
+#### SWEDEN:
+```{r}
+Box.test(res_ecm_swe, lag = 12, type = "Box-Pierce") # H_0: Ingen Aurokorrelation = Konklusion: Der er ikke autokorrelation
+```
+#### NORWAY:
+```{r}
+Box.test(res_ecm_nor, lag = 12, type = "Box-Pierce") # H_1: Aurokorrelation = Konklusion: Der er autokorrelation
+```
+
+### Ljung-Box LB-statistic
+#### DK:
+```{r}
+Box.test(res_ecm_dk, lag = 12, type = "Ljung-Box") # H_0: Ingen Aurokorrelation = Konklusion: Der er ikke autokorrelation
+```
+#### SWEDEN:
+```{r}
+Box.test(res_ecm_swe, lag = 12, type = "Ljung-Box") # H_0: Ingen Aurokorrelation = Konklusion: Der er ikke autokorrelation
+```
+#### NORWAY:
+```{r}
+Box.test(res_ecm_nor, lag = 12, type = "Ljung-Box") # H_1: Aurokorrelation = Konklusion: Der er autokorrelation
+```
+
+
+### Breusch-Godfrey test
+####DK
+```{r}
+bgtest(ecm_dk, order = 12)
+```
+
+#### SWE
+```{r}
+bgtest(ecm_swe, order = 12)
+```
+
+
+#### NOR
+```{r}
+bgtest(ecm_nor, order = 12)
+```
+
+
+## ARCH
+### BOX TEST OG BP-TEST
+#### DK
+```{r}
+Box.test(res_ecm_dk^2, lag = 12, type = "Ljung")
+```
+```{r}
+Box.test(res_ecm_dk^2, lag = 12, type = "Box")
+```
+BP TEST
+```{r}
+bptest(ecm_dk)
+```
+
+#### SWE
+```{r}
+Box.test(res_ecm_swe^2, lag = 12, type = "Ljung")
+```
+
+```{r}
+Box.test(res_ecm_swe^2, lag = 12, type = "Box")
+```
+
+```{r}
+bptest(ecm_swe)
+```
+
+#### NOR:
+```{r}
+Box.test(res_ecm_nor^2, lag = 12, type = "Ljung")
+```
+
+```{r}
+Box.test(res_ecm_nor^2, lag = 12, type = "Box")
+```
+
+```{r}
+bptest(ecm_nor)
+```
+
+
+## TEST FOR MISSPECIFIKATION
+### RESET TEST
+#### DK
+```{r}
+resettest(ecm_dk)
+```
+
+#### SWE
+```{r}
+resettest(ecm_swe)
+```
+
+#### NOR
+```{r}
+resettest(ecm_nor)
+```
+
+
+## Normalitet
+
+### JARQUE-BERA OG SHAPIRO-WILKS TEST
+#### DK
+```{r}
+jarque.bera.test(res_ecm_dk)
+```
+```{r}
+shapiro.test(res_ecm_dk)
+```
+#### SWE:
+```{r}
+jarque.bera.test(res_ecm_swe)
+```
+```{r}
+shapiro.test(res_ecm_swe)
+```
+
+#### NOR:
+```{r}
+jarque.bera.test(res_ecm_nor)
+```
+```{r}
+shapiro.test(res_ecm_nor)
+```
+
+## TJEK AF RESIDUALE
+####DK:
+```{r}
+checkresiduals(ecm_dk, test = F)
+```
+#### SWE:
+```{r}
+checkresiduals(ecm_swe, test = F)
+```
+#### NOR:
+```{r}
+checkresiduals(ecm_nor, test = F)
+```
+
+
+## Strukturelle brud
+#### DK
+```{r warning=FALSE}
+break_dk_ipc <- breakpoints(ipc_dk_diff~1)
+summary(break_dk_ipc)
+plot(ipc_dk_diff)
+lines(fitted(break_dk_ipc, breaks = 3), col = c("red"))
+lines(confint(break_dk_ipc, breaks=3))
+```
+
+#### SWE:
+```{r warning=FALSE}
+break_swe_ipc <- breakpoints(ipc_swe_diff~1)
+summary(break_swe_ipc)
+plot(ipc_swe_diff)
+lines(fitted(break_swe_ipc, breaks = 3), col = c("red"))
+lines(confint(break_swe_ipc, breaks=3))
+```
+
+
+#### NOR:
+```{r warning=FALSE}
+break_nor_ipc <- breakpoints(ipc_nor_diff~1)
+summary(break_nor_ipc)
+plot(ipc_nor_diff)
+lines(fitted(break_nor_ipc, breaks = 3), col = c("red"))
+lines(confint(break_nor_ipc, breaks=3))
+```
+
+
+
+# UDREGNING AF LANGSIGTEDE PÅVIRKNINGER
+## DK
+### LANGSIGTEDE PÅVIRKNINGER
+```{r}
+summary(dynlm(formula = ipc_dk_diff ~ L(ipc_dk_diff, 1) + L(ssi_dk_diff, 0) + L(pg_dk_diff, 0) + L(ipc_dk, 1) + L(ssi_dk, 1) + L(pg_dk,1) + dummy_dk))
+```
+
+LR påvirkening af investeringernes andel på Y/L
+$$
+-\frac{\phi_1}{\theta_1}=-\frac{0.019081}{-0.016203}=1.177621
+$$
+LR påvirkning af NGD på Y/L
+$$
+-\frac{\phi_2}{\theta_1}=-\frac{-0.021580}{-0.016203}=-1.331852
+$$
+
+
+
+### Speed of Adjustment:
+```{r}
+LRR_DK <- lm(ipc_dk ~ ssi_dk + pg_dk)
+error_dk <- residuals(LRR_DK)
+error_dk <- ts(error_dk, start = 1951, frequency = 1)
+summary(dynlm(ipc_dk_diff ~ L(ipc_dk_diff,1) + L(ssi_dk_diff, 0) + L(pg_dk_diff, 0) + dummy_dk + L(error_dk, 1)))
+
+```
+
+
+
+
+
+## NORGE
+### LANGSIGTEDE PÅVIRKNINGER
+```{r}
+dummy_nor <- ts(NORdata$dummy, start=1951, freq = 1)
+summary(dynlm(ipc_nor_diff ~ L(ipc_nor_diff, 1) + L(ssi_nor_diff, 0) + L(pg_nor_diff, 0) + L(ipc_nor, 1) + L(ssi_nor, 1) + L(pg_nor, 1) + dummy_nor))
+```
+LR påvirkening af investeringernes andel på Y/L
+$$
+-\frac{\phi_1}{\theta_1}=-\frac{0.001561}{-0.011482}=0.1359519
+$$
+LR påvirkning af NGD på Y/L
+$$
+-\frac{\phi_2}{\theta_1}=-\frac{0.008142}{-0.011482}=0.7091099
+$$
+
+
+
+### Speed of Adjustment:
+```{r}
+LRR_NOR <- lm(ipc_nor ~ ssi_nor + pg_nor)
+error_nor <- residuals(LRR_NOR)
+error_nor <- ts(error_nor, start = 1951, frequency = 1)
+summary(dynlm(ipc_nor_diff ~ L(ipc_nor_diff, 1) + L(ssi_nor_diff, 0) + L(pg_nor_diff, 0) + dummy_nor + L(error_nor,1)))
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

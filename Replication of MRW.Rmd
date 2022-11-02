@@ -1,0 +1,589 @@
+---
+title: "Første del"
+output:
+  word_document: default
+  html_document: default
+  pdf_document: default
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+# Indlæser pakker
+```{r}
+library(readxl)
+library(tidyverse)
+library(dplyr)
+library(car)
+library(tibble)     # nice dataframes
+library(stargazer)  # regression tables
+library(ggplot2)    # nice graphs
+library(dplyr)      # data manipulation
+library(car)        # test linear hypotheses
+library(skimr)      # descriptive statistics
+library(tseries)
+library(sandwich)
+library(lmtest)
+library(olsrr) # Automatiske normalitets test
+library(DescTools) # Bruges til at udfører Jarque-Bera test med NA's
+library(texreg)
+library(MASS)
+library(skedastic)
+options(digits=5)
+```
+
+
+# Indlæser datasæt og omregner til Ratio
+```{r}
+mrw <- read.csv2("C:/Users/libas/Downloads/mrw (5).csv", header=TRUE)
+
+# Omregner fra procent til Ratio
+mrw <- mrw %>%
+  mutate(gdpgrowth=gdpgrowth/100) %>%
+  mutate(popgrowth=popgrowth/100) %>%
+  mutate(i_y=i_y/100) %>%
+  mutate(school=school/100)
+
+view(mrw)
+```
+
+# MRW Replikation uden Human Kapital
+## Laver ngd variabel
+```{r}
+mrw$ngd <- mrw$popgrowth+0.05
+```
+## Estimere ubegrænsede model
+```{r}
+hele_stikprøve_reg <-lm(log(rgdpw85)~log(i_y)+log(ngd),data = mrw)
+summary(hele_stikprøve_reg)
+```
+## Udfør estimaterne igen, men ved at opdele landene i Non-Oil, Intermediate og OECD.
+```{r}
+non_oil_reg <- lm(log(rgdpw85)~log(i_y)+log(ngd),subset(mrw, non_oil=="1"))
+inter_reg <- lm(log(rgdpw85)~log(i_y)+log(ngd),subset(mrw, intermediate=="1"))
+oecd_reg <- lm(log(rgdpw85)~log(i_y)+log(ngd),subset(mrw, oecd=="1"))
+```
+
+```{r}
+screenreg (list(non_oil = non_oil_reg, inter = inter_reg, oecd = oecd_reg), digits = 4)
+```
+
+## Estimer Parameterne for den begrænsede model for hele stikprøven og de 3 grupper
+```{r}
+# Restriktionerne log(i_y) =  -log(ngd)
+mrw$restriktioner <- log(mrw$i_y)-log(mrw$ngd)
+
+# Ffilter
+non_oil <- mrw %>%
+  filter(non_oil==1)
+inter <- mrw %>%
+  filter(intermediate==1)
+oecd <- mrw %>%
+  filter(oecd==1)
+
+# Beskrivelse af de begrænsede modeller
+restriktioner_helestikprøven_reg <- lm(log(rgdpw85) ~ restriktioner, data = mrw)
+restriktioner_nonoil_reg <-lm(log(rgdpw85)~restriktioner,data=non_oil)
+restriktioner_inter_reg <-lm(log(rgdpw85)~restriktioner,data=inter)
+restriktioner_oecd_reg <-lm(log(rgdpw85)~restriktioner,data=oecd)
+
+# Estimering af parametrene for de begrænsde modeller
+summary(restriktioner_helestikprøven_reg)
+summary(restriktioner_nonoil_reg)
+summary(restriktioner_inter_reg)
+summary(restriktioner_oecd_reg)
+
+# Test af restriktioner 
+linearHypothesis(hele_stikprøve_reg, c(0,1,1))
+
+linearHypothesis(non_oil_reg, c(0,1,1))
+
+linearHypothesis(inter_reg, c(0,1,1))
+
+linearHypothesis(oecd_reg, c(0,1,1))
+```
+## Test af restriktioner 
+```{r}
+linearHypothesis(hele_stikprøve_reg, c(0,1,1))
+
+linearHypothesis(non_oil_reg, c(0,1,1))
+
+linearHypothesis(inter_reg, c(0,1,1))
+
+linearHypothesis(oecd_reg, c(0,1,1))
+```
+
+
+## Udregning af den Implied $\alpha$ for de 3 grupper
+```{r}
+non_oil_reg_r <- lm(log(rgdpw85)~I(log(i_y)-log(ngd)),subset(mrw, non_oil=="1"))
+
+inter_reg_r <- lm(log(rgdpw85)~I(log(i_y)-log(ngd)),subset(mrw, intermediate=="1"))
+
+oecd_reg_r <- lm(log(rgdpw85)~I(log(i_y)-log(ngd)),subset(mrw, oecd=="1"))
+
+#Udskriv resultater
+print(paste("Implied alpha (Non oil):", round(non_oil_reg_r$coefficients[2]/(1+non_oil_reg_r$coefficients[2]),2)))
+print(paste("Implied alpha (Intermediate):", round(inter_reg_r$coefficients[2]/(1+inter_reg_r$coefficients[2]),2)))
+print(paste("Implied alpha (OECD):", round(oecd_reg_r$coefficients[2]/(1+oecd_reg_r$coefficients[2]),2)))
+```
+
+
+## Udfør diagnosticering af den ubegrænsede model for hele stikprøven
+
+### Grafisk test
+```{r}
+par(mfrow=c(2,2)); par(mar=c(2,3,2,1),mgp=c(2,.5,0),las=0)
+plot(hele_stikprøve_reg)
+```
+
+
+### Automatisk BP-test
+```{r}
+tesst <- rlm(log(rgdpw85) ~ log(i_y) + log(ngd), data = mrw)
+bptest(hele_stikprøve_reg)
+```
+
+
+### White test for heteroskedasticitet
+```{r}
+
+white_lm(hele_stikprøve_reg)
+
+```
+
+
+
+### Reset test med korrigering af heteroskedastcitet
+```{r}
+## RESET TEST MED KORRIGERING AF HETEROSKEDASTICTET
+## Beregner de fittede værdier
+fitt <- fitted.values(lm(log(rgdpw85) ~ log(i_y) + log(ngd), data = mrw, na.action = na.exclude))
+## Laver begrænsede model
+unrestricted_model <- lm(log(rgdpw85) ~ log(i_y) + log(ngd) + I(fitt^2) + I(fitt^3), na.action = na.exclude, data = mrw) 
+
+## Udfører F-test
+waldtest(hele_stikprøve_reg, unrestricted_model, vcov = vcovHC(unrestricted_model, type = "HC1"))
+
+```
+
+
+## Test for Normalitet
+
+### Jarque-Bera test
+```{r}
+JarqueBeraTest(residuals(hele_stikprøve_reg, na.rm = TRUE), method = "chisq") 
+```
+
+### Sharpio-Wilks test
+```{r}
+shapiro.test(rstandard(hele_stikprøve_reg))
+```
+
+### Kalmogorov-Smirnov test
+```{r}
+ks.test(rstandard(hele_stikprøve_reg),pnorm)
+```
+
+# MRW Replikation med Human Kapital
+
+```{r}
+## Estimate the parameters of the model for all countries using the entire sample.
+hele_stikprøve_reg_hk <- lm(log(rgdpw85)~log(i_y)+log(ngd)+log(school), data = mrw)
+summary(hele_stikprøve_reg_hk)
+
+## Then perform the analysis by splitting the sample into OECD, 
+##intermediate, and non-oil countries.
+### non-oil med human kapital
+non_oil_reg_hk <- lm(log(rgdpw85)~log(i_y)+log(ngd)+log(school),subset(mrw, non_oil=="1"))
+### intermediate med human kapital
+inter_reg_hk <- lm(log(rgdpw85)~log(i_y)+log(ngd)+log(school),subset(mrw, intermediate=="1"))
+### OECD med human kapital
+oecd_reg_hk <- lm(log(rgdpw85)~log(i_y)+log(ngd)+log(school),subset(mrw, oecd=="1"))
+
+#TABEL
+screenreg(list("Non-oil" = non_oil_reg_hk, "Intermediate" = inter_reg_hk, "OECD"=oecd_reg_hk), digits = 4, custom.header = list("MRW model med Human Kapital" = 1:3))
+```
+## Estimer parameterne af den begrænsede model for Non-oil, intermediate og OECD.
+```{r}
+# entire sample, OECD, intermediate, and non-oil countries
+mrw$restriktioner_hk1 <- log(mrw$i_y)-log(mrw$ngd)
+mrw$restriktioner_hk2 <- log(mrw$school)-log(mrw$ngd)
+
+# Regression af restriktioner
+summary(lm(log(rgdpw85)~restriktioner_hk1 + restriktioner_hk2, data = mrw))
+
+# Non-oil
+restrikt_non_oil_hk <- lm(log(rgdpw85)~restriktioner_hk1 + restriktioner_hk2, subset(mrw, non_oil=="1"))
+summary(restrikt_non_oil_hk)
+# Intermediate
+restrikt_intermediate_hk <- lm(log(rgdpw85)~restriktioner_hk1 + restriktioner_hk2, subset(mrw, intermediate=="1"))
+summary(restrikt_intermediate_hk)
+# OECD
+restrikt_oecd_hk <- lm(log(rgdpw85)~restriktioner_hk1 + restriktioner_hk2, subset(mrw, oecd=="1"))
+summary(restrikt_oecd_hk)
+```
+## Test af restriktionerne
+```{r}
+# c(0,1,1,1) betyder at vi bruger første til 3 variabel, men ikke skæringen.
+
+# Hele stikprøven
+linearHypothesis(hele_stikprøve_reg_hk, c(0,1,1,1))
+
+# Non-oil
+linearHypothesis(non_oil_reg_hk,c(0,1,1,1))
+
+# Intermediate
+linearHypothesis(inter_reg_hk, c(0,1,1,1))
+
+# OECD
+linearHypothesis(oecd_reg_hk, c(0,1,1,1))
+```
+
+
+## Implied Alpha og Beta 
+```{r}
+# Non-oil med human kapital
+non_oil_reg_hk_r <- lm(log(rgdpw85)~I(log(i_y)-log(ngd))+I(log(school)-log(ngd)),subset(mrw, non_oil=="1"))
+### intermediate med human kapital
+inter_reg_hk_r <-  lm(log(rgdpw85)~I(log(i_y)-log(ngd))+I(log(school)-log(ngd)),subset(mrw, intermediate=="1"))
+### OECD med human kapital
+oecd_reg_hk_r <-  lm(log(rgdpw85)~I(log(i_y)-log(ngd))+I(log(school)-log(ngd)),subset(mrw, oecd=="1"))
+
+
+# Implied Alpha og Beta for alle 3 lande
+matrix(
+  c((round(round(coef(non_oil_reg_hk_r)[2],2) / (round(coef(non_oil_reg_hk_r)[2],2)+round(coef(non_oil_reg_hk_r)[3],2)+1),2)), 
+    round(round(coef(non_oil_reg_hk_r)[3],2) / (round(coef(non_oil_reg_hk_r)[2],2)+round(coef(non_oil_reg_hk_r)[3],2)+1),2),
+    round(round(coef(inter_reg_hk_r)[2],2) / (round(coef(inter_reg_hk_r)[2],2)+round(coef(inter_reg_hk_r)[3],2)+1),2),
+    round(round(coef(inter_reg_hk_r)[3],2) / (round(coef(inter_reg_hk_r)[2],2)+round(coef(inter_reg_hk_r)[3],2)+1),2),
+    round(round(coef(oecd_reg_hk_r)[2],2) / (round(coef(oecd_reg_hk_r)[2],2)+round(coef(oecd_reg_hk_r)[3],2)+1),2),
+    round(round(coef(oecd_reg_hk_r)[3],2) / (round(coef(oecd_reg_hk_r)[2],2)+round(coef(oecd_reg_hk_r)[3],2)+1),2)),
+  nrow = 3, ncol = 2, byrow = TRUE, 
+  dimnames = list(
+  c("NON-OIL","INTERMEDIATE","OECD"),
+  c("ALPHA", "BETA")))
+```
+
+
+
+## Diagnostics
+
+### Grafisk test
+```{r}
+par(mfrow=c(2,2)); par(mar=c(3,3.5,2,1.5),mgp=c(2,.5,0),las=0)
+plot(hele_stikprøve_reg_hk)
+```
+
+### Automatisk BP-Test
+```{r}
+bptest(hele_stikprøve_reg_hk)
+```
+
+
+### White test
+
+```{r}
+white_lm(hele_stikprøve_reg_hk)
+```
+
+
+### RESET Test for misspecification
+```{r}
+## RESET TEST MED KORRIGERING AF HETEROSKEDASTICTET
+## Beregner de fittede værdier
+fitt <- fitted.values(lm(log(rgdpw85) ~ log(i_y) + log(ngd) + log(school), data = mrw, na.action = na.exclude))
+## Laver begrænsede model
+unrestricted_model <- lm(log(rgdpw85) ~ log(i_y) + log(ngd) + log(school) + I(fitt^2) + I(fitt^3), na.action = na.exclude, data = mrw) 
+
+## Udfører F-test
+waldtest(hele_stikprøve_reg_hk, unrestricted_model, vcov = vcovHC(unrestricted_model, type = "HC1"))
+```
+
+
+### Test for normalitet
+```{r}
+## Jarque Bera Test
+hele_stikprøve_reg_hk <- lm(log(rgdpw85)~log(i_y)+log(ngd)+log(school), data = mrw)
+jarque.bera.test(residuals(hele_stikprøve_reg_hk))
+## Shapiro-Wilks test
+shapiro.test(residuals(hele_stikprøve_reg_hk))
+
+## Kalmogorov-Smirnov test
+ks.test(residuals(hele_stikprøve_reg_hk),pnorm)
+
+```
+
+
+
+
+
+```{r}
+# Plot af non-oil uden HK
+par(mfrow=c(2,2)); par(mar=c(3,3.5,2,1.5),mgp=c(2,.5,0),las=0)
+plot(non_oil_reg)
+```
+```{r}
+# Plot af OECD uden HK
+par(mfrow=c(2,2)); par(mar=c(3,3.5,2,1.5),mgp=c(2,.5,0),las=0)
+plot(oecd_reg)
+```
+```{r}
+# Plot af intermediate uden HK
+par(mfrow=c(2,2)); par(mar=c(3,3.5,2,1.5),mgp=c(2,.5,0),las=0)
+plot(inter_reg)
+```
+
+```{r}
+# bptest uden HK
+bpnonoil <- bptest(non_oil_reg)
+bpinter <- bptest(inter_reg)
+bpoecd <- bptest(oecd_reg)
+
+bpnonoil ; bpinter ; bpoecd
+```
+```{r}
+# White test for heteroskedasticitet for non_oil
+
+white_res_nonoil <- residuals(lm(log(rgdpw85) ~ log(i_y) + log(ngd), data = non_oil, na.action = na.exclude), na.action = na.exclude)^2
+
+summary(lm(white_res_nonoil ~ log(ngd) * log(i_y) + I(log(ngd)) * I(log(i_y)), data = non_oil, na.action = na.exclude))
+```
+
+```{r}
+# Woolbridge udgaven af white testen non_oil
+fitted_while_nonoil <- fitted.values(lm(log(rgdpw85) ~ log(i_y) + log(ngd), data = non_oil, na.action = na.exclude))
+
+summary(lm(white_res_nonoil ~ fitted_while_nonoil + I(fitted_while_nonoil^2)))
+```
+```{r}
+# White test for heteroskedasticitet for inter
+
+white_res_inter <- residuals(lm(log(rgdpw85) ~ log(i_y) + log(ngd), data = inter, na.action = na.exclude), na.action = na.exclude)^2
+
+summary(lm(white_res_inter ~ log(ngd) * log(i_y) + I(log(ngd)) * I(log(i_y)), data = inter, na.action = na.exclude))
+```
+```{r}
+# Woolbridge udgaven af white testen inter
+fitted_while_inter <- fitted.values(lm(log(rgdpw85) ~ log(i_y) + log(ngd), data = inter, na.action = na.exclude))
+
+summary(lm(white_res_inter ~ fitted_while_inter + I(fitted_while_inter^2)))
+```
+```{r}
+# White test for heteroskedasticitet for OECD
+
+white_res_oecd <- residuals(lm(log(rgdpw85) ~ log(i_y) + log(ngd), data = oecd, na.action = na.exclude), na.action = na.exclude)^2
+
+summary(lm(white_res_oecd ~ log(ngd) * log(i_y) + I(log(ngd)) * I(log(i_y)), data = oecd, na.action = na.exclude))
+```
+```{r}
+# Woolbridge udgaven af white testen oecd
+fitted_while_oecd <- fitted.values(lm(log(rgdpw85) ~ log(i_y) + log(ngd), data = oecd, na.action = na.exclude))
+
+summary(lm(white_res_oecd ~ fitted_while_oecd + I(fitted_while_oecd^2)))
+```
+
+
+```{r}
+# Reset test
+
+# beregner fitted værdier
+fittnonoil <- fitted.values(lm(log(rgdpw85) ~ log(i_y) + log(ngd), data = non_oil, na.action = na.exclude))
+
+fittinter <- fitted.values(lm(log(rgdpw85) ~ log(i_y) + log(ngd), data = inter, na.action = na.exclude))
+
+fittoecd <- fitted.values(lm(log(rgdpw85) ~ log(i_y) + log(ngd), data = oecd, na.action = na.exclude))
+
+# laver model
+unrestricted_nonoil <- lm(log(rgdpw85) ~ log(i_y) + log(ngd) + I(fittnonoil^2) + I(fittnonoil^3), na.action = na.exclude, data = non_oil)
+
+unrestricted_inter <- lm(log(rgdpw85) ~ log(i_y) + log(ngd) + I(fittinter^2) + I(fittinter^3), na.action = na.exclude, data = inter)
+
+unrestricted_oecd <- lm(log(rgdpw85) ~ log(i_y) + log(ngd) + I(fittoecd^2) + I(fittoecd^3), na.action = na.exclude, data = oecd)
+
+waldnonoil <- waldtest(non_oil_reg, unrestricted_nonoil, vcov = vcovHC(unrestricted_nonoil, type = "HC1"))
+
+waldinter <- waldtest(inter_reg, unrestricted_inter, vcov = vcovHC(unrestricted_inter, type = "HC1"))
+
+waldoecd <- waldtest(oecd_reg, unrestricted_oecd, vcov = vcovHC(unrestricted_oecd, type = "HC1"))
+
+waldnonoil ; waldinter ; waldoecd
+
+```
+
+```{r}
+# Normalitetstest non_oil uden HK
+JarqueBeraTest(rstandard(non_oil_reg, na.rm = TRUE))
+
+shapiro.test(rstandard(non_oil_reg))
+
+ols_test_normality(non_oil_reg)$kolmogorv
+```
+
+```{r}
+# Normalitetstest inter uden HK
+
+JarqueBeraTest(rstandard(inter_reg, na.rm = TRUE))
+
+shapiro.test(rstandard(inter_reg))
+
+ols_test_normality(inter_reg)$kolmogorv
+
+```
+```{r}
+# Normalitetstest oecd uden HK
+
+JarqueBeraTest(residuals(oecd_reg, na.rm = TRUE))
+
+shapiro.test(rstandard(oecd_reg))
+
+ols_test_normality(oecd_reg)$kolmogorv
+```
+
+
+```{r}
+# Plot af non_oil med HK
+par(mfrow=c(2,2)); par(mar=c(3,3.5,2,1.5),mgp=c(2,.5,0),las=0)
+plot(non_oil_reg_hk)
+```
+```{r}
+# Plot af inter med HK
+par(mfrow=c(2,2)); par(mar=c(3,3.5,2,1.5),mgp=c(2,.5,0),las=0)
+plot(inter_reg_hk)
+```
+```{r}
+# Plot af oecd med HK
+par(mfrow=c(2,2)); par(mar=c(3,3.5,2,1.5),mgp=c(2,.5,0),las=0)
+plot(oecd_reg_hk)
+```
+```{r}
+# bptest med HK
+
+bpnonoilhk <- bptest(non_oil_reg_hk)
+bpinterhk <- bptest(inter_reg_hk)
+bpoecdhk <- bptest(oecd_reg_hk)
+
+bpnonoilhk ; bpinterhk ; bpoecdhk
+```
+
+```{r}
+# White test for heteroskedasticitet for non_oil_HK
+
+white_res_nonoil_HK <- residuals(lm(log(rgdpw85) ~ log(i_y) + log(ngd) + log(school), data = non_oil, na.action = na.exclude), na.action = na.exclude)^2
+
+summary(lm(white_res_nonoil_HK ~ log(ngd) + log(i_y) + log(school) + I(log(ngd) * log(school)) + I(log(i_y) * log(school)), data = non_oil, na.action = na.exclude))
+
+```
+```{r}
+# Woolbridge udgaven af white testen non_oil_HK
+fitted_while_nonoil_HK <- fitted.values(lm(log(rgdpw85) ~ log(i_y) + log(ngd) + log(school), data = non_oil, na.action = na.exclude))
+
+summary(lm(white_res_nonoil_HK ~ fitted_while_nonoil_HK + I(fitted_while_nonoil_HK^2)))
+```
+
+
+
+```{r}
+# White test for heteroskedasticitet for inter_HK
+
+white_res_inter_HK <- residuals(lm(log(rgdpw85) ~ log(i_y) + log(ngd) + log(school), data = inter, na.action = na.exclude), na.action = na.exclude)^2
+
+summary(lm(white_res_inter_HK ~ log(ngd) + log(i_y) + log(school) + I(log(ngd) * log(school)) + I(log(i_y) * log(school)), data = inter, na.action = na.exclude))
+```
+```{r}
+# Woolbridge udgaven af white testen inter_HK
+fitted_while_inter_HK <- fitted.values(lm(log(rgdpw85) ~ log(i_y) + log(ngd) + log(school), data = inter, na.action = na.exclude))
+
+summary(lm(white_res_inter_HK ~ fitted_while_inter_HK + I(fitted_while_inter_HK^2)))
+```
+
+
+
+```{r}
+# White test for heteroskedasticitet for oecd_HK
+
+white_res_oecd_HK <- residuals(lm(log(rgdpw85) ~ log(i_y) + log(ngd) + log(school), data = oecd, na.action = na.exclude), na.action = na.exclude)^2
+
+summary(lm(white_res_oecd_HK ~ log(ngd) + log(i_y) + log(school) + I(log(ngd) * log(school)) + I(log(i_y) * log(school)), data = oecd, na.action = na.exclude))
+```
+```{r}
+# Woolbridge udgaven af white testen oecd_HK
+fitted_while_oecd_HK <- fitted.values(lm(log(rgdpw85) ~ log(i_y) + log(ngd) + log(school), data = oecd, na.action = na.exclude))
+
+summary(lm(white_res_oecd_HK ~ fitted_while_oecd_HK + I(fitted_while_oecd_HK^2)))
+```
+```{r}
+# Reset test med HK
+# Beregner de fitted værdier
+
+fitt_non_oil_hk <- fitted.values(lm(log(rgdpw85) ~ log(i_y) + log(ngd) + log(school), data = non_oil, na.action = na.exclude))
+
+fitt_inter_hk <- fitted.values(lm(log(rgdpw85) ~ log(i_y) + log(ngd) + log(school), data = inter, na.action = na.exclude))
+
+fitt_oecd_hk <- fitted.values(lm(log(rgdpw85) ~ log(i_y) + log(ngd) + log(school), data = oecd, na.action = na.exclude))
+
+
+# Laver begrænsede model
+unrestricted_non_oil_hk <- lm(log(rgdpw85) ~ log(i_y) + log(ngd) + log(school) + I(fitt_non_oil_hk^2) + I(fitt_non_oil_hk), na.action = na.exclude, data = non_oil)
+
+unrestricted_inter_hk <- lm(log(rgdpw85) ~ log(i_y) + log(ngd) + log(school) + I(fitt_inter_hk^2) + I(fitt_inter_hk), na.action = na.exclude, data = inter)
+
+unrestricted_oecd_hk <- lm(log(rgdpw85) ~ log(i_y) + log(ngd) + log(school) + I(fitt_oecd_hk^2) + I(fitt_oecd_hk), na.action = na.exclude, data = oecd)
+
+# Udfører F-test
+
+wald_non_oil_hk <- waldtest(non_oil_reg_hk, unrestricted_non_oil_hk, vcov = vcovHC(unrestricted_non_oil_hk, type = "HC1"))
+
+wald_inter_hk <- waldtest(inter_reg_hk, unrestricted_inter_hk, vcov = vcovHC(unrestricted_inter_hk, type = "HC1"))
+
+wald_oecd_hk <- waldtest(oecd_reg_hk, unrestricted_oecd_hk, vcov = vcovHC(unrestricted_oecd_hk, type = "HC1"))
+
+wald_non_oil_hk ; wald_inter_hk ; wald_oecd_hk
+```
+
+```{r}
+# Normalitetstest af non_oil
+
+## Jarque Bera test
+jarque.bera.test(rstandard(non_oil_reg_hk))
+
+## Shapiro_wilks test
+
+shapiro.test(rstandard(non_oil_reg_hk))
+
+## Kalmogorov_Smirov test
+
+ols_test_normality(non_oil_reg_hk)$kolmogorv
+```
+
+```{r}
+# Normalitetstest af inter
+
+## Jarque Bera test
+jarque.bera.test(rstandard(inter_reg_hk))
+
+## Shapiro_wilks test
+
+shapiro.test(rstandard(inter_reg_hk))
+
+## Kalmogorov_Smirov test
+
+ols_test_normality(inter_reg_hk)$kolmogorv
+
+```
+
+```{r}
+# Normalitetstest af oecd
+
+## Jarque Bera test
+jarque.bera.test(rstandard(oecd_reg_hk))
+
+## Shapiro_wilks test
+
+shapiro.test(rstandard(oecd_reg_hk))
+
+## Kolmogorov_Smirov test
+
+ols_test_normality(oecd_reg_hk)$kolmogorv
+```
